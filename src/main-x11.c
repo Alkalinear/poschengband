@@ -124,6 +124,14 @@ char *XSetIMValues(XIM, ...); /* Hack for XFree86 4.0 */
  */
 #include "maid-x11.c"
 
+/*
+ * Hack -- Darwin equivalent of __useconds_t is __darwin_useconds_t
+ */
+#ifdef __APPLE__
+#include <_types.h>
+typedef __darwin_useconds_t __useconds_t;
+#endif
+
 /* gcc warns that this is implicitly declared:
 main-x11.c:2747:3: warning: implicit declaration of function ‘usleep’ [-Wimplicit-function-declaration]
    case TERM_XTRA_DELAY: usleep(1000 * v); return (0);
