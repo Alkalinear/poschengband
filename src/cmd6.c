@@ -94,6 +94,8 @@ bool restore_mana(void)
     {
         if (!inventory[i].k_idx) continue;
         if (!object_is_device(&inventory[i])) continue;
+        if (inventory[i].activation.type == EFFECT_RESTORE_MANA) continue;
+
         if (inventory[i].tval == TV_ROD)
             device_regen_sp_aux(&inventory[i], 700);
         else
@@ -204,6 +206,7 @@ static void do_cmd_eat_food_aux(int item)
                         ident = TRUE;
                     }
                 }
+                else equip_learn_flag(OF_FREE_ACT);
                 break;
             }
 
@@ -1114,7 +1117,7 @@ static void do_cmd_device_aux(int item)
     int          charges = 1;
     int          boost;
     bool         is_devicemaster = FALSE;
-    u32b         flgs[TR_FLAG_SIZE];
+    u32b         flgs[OF_ARRAY_SIZE];
 
     if (item >= 0)
         o_ptr = &inventory[item];
@@ -1128,7 +1131,7 @@ static void do_cmd_device_aux(int item)
         }
     }
     assert(o_ptr->number == 1); /* Devices no longer stack */
-    object_flags(o_ptr, flgs);
+    obj_flags(o_ptr, flgs);
 
     /* Devicemasters get extra power */
     is_devicemaster = devicemaster_is_speciality(o_ptr);
@@ -1146,7 +1149,7 @@ static void do_cmd_device_aux(int item)
             energy_use -= delta;
     }
 
-    if (have_flag(flgs, TR_SPEED))
+    if (have_flag(flgs, OF_SPEED))
         energy_use -= energy_use * o_ptr->pval / 10;
 
     if (p_ptr->tim_no_device)
@@ -1178,7 +1181,7 @@ static void do_cmd_device_aux(int item)
         return;
     }
 
-    if ((o_ptr->curse_flags & TRC_CURSED) && one_in_(6))
+    if ((o_ptr->curse_flags & OFC_CURSED) && one_in_(6))
     {
         msg_print("Oops! The device explodes!");
         project(
@@ -1562,6 +1565,7 @@ static void do_cmd_activate_aux(int item)
     cptr         msg;
     effect_t     effect;
     int          boost = device_power(100) - 100;
+    u32b         flgs[OF_ARRAY_SIZE];
 
     /* Get the item (in the pack) */
     if (item >= 0)
@@ -1574,6 +1578,7 @@ static void do_cmd_activate_aux(int item)
     {
         o_ptr = &o_list[0 - item];
     }
+    obj_flags_known(o_ptr, flgs);
 
     /* Take a turn */
     energy_use = 100;
@@ -1613,12 +1618,20 @@ static void do_cmd_activate_aux(int item)
         _do_capture_ball(o_ptr);
         return;
     }
-
+    device_known = have_flag(flgs, OF_ACTIVATE);
     if (effect_use(&effect, boost))
     {
+        if (device_noticed)
+            obj_learn_activation(o_ptr);
+
         o_ptr->timeout = effect.cost;
         p_ptr->window |= (PW_INVEN | PW_EQUIP);
     }
+}
+
+static bool _activate_p(object_type *o_ptr)
+{
+    return /*obj_is_identified(o_ptr) &&*/ obj_has_effect(o_ptr);
 }
 
 void do_cmd_activate(void)
@@ -1634,8 +1647,7 @@ void do_cmd_activate(void)
 
     item_tester_no_ryoute = TRUE;
     /* Prepare the hook */
-    /*item_tester_hook = item_tester_hook_activate;*/
-    item_tester_hook = obj_has_effect;
+    item_tester_hook = _activate_p;
 
     /* Get an item */
     q = "Activate which item? ";

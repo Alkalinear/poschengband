@@ -134,6 +134,7 @@ doc_region_t  doc_range_middle(doc_ptr doc, doc_pos_t start, doc_pos_t stop);
 doc_region_t  doc_range_middle_lines(doc_ptr doc, int start_line, int stop_line);
 
 int           doc_line_count(doc_ptr doc);
+int           doc_width(doc_ptr doc);
 
 doc_pos_t     doc_next_bookmark(doc_ptr doc, doc_pos_t pos);
 doc_pos_t     doc_prev_bookmark(doc_ptr doc, doc_pos_t pos);
@@ -162,6 +163,7 @@ doc_pos_t     doc_insert_cols(doc_ptr dest_doc, doc_ptr src_cols[], int col_coun
 doc_pos_t     doc_insert_space(doc_ptr dest_doc, int count);
 doc_pos_t     doc_newline(doc_ptr doc);
 void          doc_rollback(doc_ptr doc, doc_pos_t pos);
+void          doc_clear(doc_ptr doc);
 
 doc_pos_t     doc_printf(doc_ptr doc, const char *fmt, ...);
 doc_pos_t     doc_cprintf(doc_ptr doc, byte a, const char *fmt, ...);

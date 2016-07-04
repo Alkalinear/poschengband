@@ -14,7 +14,51 @@
 
 #include <assert.h>
 
+/* Statistics: Use the wizard commands '-' and '=' to gather statistics.
+   The Wizard command '"' and 'A' will then show all found artifacts,
+   including rand-arts. The character sheet will show statistics on object
+   distributions and key resources. The object info commands '~' for egos 'e'
+   and objects 'o' are also useful. Be sure to begin each statistics run
+   with a fresh, newly created character.*/
 bool statistics_hack = FALSE;
+static vec_ptr _rand_arts = NULL;
+static vec_ptr _egos = NULL;
+
+vec_ptr stats_rand_arts(void)
+{
+    if (!_rand_arts)
+        _rand_arts = vec_alloc(free);
+    return _rand_arts;
+}
+
+vec_ptr stats_egos(void)
+{
+    if (!_egos)
+        _egos = vec_alloc(free);
+    return _egos;
+}
+
+void stats_add_rand_art(object_type *o_ptr)
+{
+    if (o_ptr->art_name)
+    {
+        object_type *copy = malloc(sizeof(object_type));
+        *copy = *o_ptr;
+        obj_identify_fully(copy);
+        vec_add(stats_rand_arts(), copy);
+    }
+}
+
+void stats_add_ego(object_type *o_ptr)
+{
+    if (o_ptr->name2)
+    {
+        object_type *copy = malloc(sizeof(object_type));
+        *copy = *o_ptr;
+        obj_identify_fully(copy);
+        vec_add(stats_egos(), copy);
+    }
+}
 
 /*
  * Strip an "object name" into a buffer
@@ -121,10 +165,41 @@ static bool wiz_dimension_door(void)
  */
 static void wiz_create_named_art(int a_idx)
 {
-    create_named_art(a_idx, py, px);
+    if (create_named_art(a_idx, py, px))
+        a_info[a_idx].generated = TRUE;
 }
 
+typedef struct {
+    string_ptr msg;
+    int        score;
+    int        lvl;
+} _wiz_msg_t, *_wiz_msg_ptr;
 
+static _wiz_msg_ptr _wiz_msg_alloc(void)
+{
+    _wiz_msg_ptr result = malloc(sizeof(_wiz_msg_t));
+    result->msg = string_alloc();
+    result->score = 0;
+    result->lvl = 0;
+    return result;
+}
+static void _wiz_msg_free(_wiz_msg_ptr msg)
+{
+    if (msg)
+    {
+        string_free(msg->msg);
+        msg->msg = 0;
+        free(msg);
+    }
+}
+static int _wiz_msg_cmp_score_desc(_wiz_msg_ptr l, _wiz_msg_ptr r)
+{
+    if (l->score < r->score)
+        return 1;
+    if (l->score > r->score)
+        return -1;
+    return 0;
+}
 /*
  * Hack -- quick debugging hook
  */
@@ -143,16 +218,15 @@ static void do_cmd_wiz_hack_chris1(void)
     int ct_pval = 0;
     int pow_base = 0;
     int i;
+    vec_ptr results = vec_alloc((vec_free_f)_wiz_msg_free);
 
     {
         object_type forge = {0};
         char buf[MAX_NLEN];
 
         if (!create_named_art_aux(a_idx, &forge)) return;
-        pow_base = object_value_real(&forge);
-        identify_item(&forge);
-
-        forge.ident |= (IDENT_FULL); 
+        pow_base = obj_value_real(&forge);
+        obj_identify_fully(&forge);
         object_desc(buf, &forge, 0);
 
         msg_format("Replacing %s (Cost: %d):", buf, pow_base);
@@ -163,53 +237,37 @@ static void do_cmd_wiz_hack_chris1(void)
         char buf[MAX_NLEN];
         int value;
 
-        if (0)
-        {
-            create_replacement_art(a_idx, &forge);
-        }
-        else
-        {
-            artifact_type  *a_ptr = &a_info[a_idx];
-            int                k_idx = lookup_kind(a_ptr->tval, a_ptr->sval);
+        create_replacement_art(a_idx, &forge);
+        obj_identify_fully(&forge);
 
-            object_prep(&forge, k_idx);
-            create_artifact(&forge, CREATE_ART_GOOD);
-        }
-        identify_item(&forge);
-
-        forge.ident |= (IDENT_FULL); 
-    /*    forge.art_name = dummy_name; */
-        object_desc(buf, &forge, 0);
-        value = object_value_real(&forge);
+        object_desc(buf, &forge, OD_COLOR_CODED);
+        value = obj_value_real(&forge);
         ct_pval += forge.pval;
 
-        if (have_flag(forge.art_flags, TR_IM_ACID)
-         || have_flag(forge.art_flags, TR_IM_COLD)
-         || have_flag(forge.art_flags, TR_IM_FIRE)
-         || have_flag(forge.art_flags, TR_IM_ELEC))
+        if (have_flag(forge.flags, OF_IM_ACID)
+         || have_flag(forge.flags, OF_IM_COLD)
+         || have_flag(forge.flags, OF_IM_FIRE)
+         || have_flag(forge.flags, OF_IM_ELEC))
         {
             int ct = 0;
             ct_immunity++;
             
-            if (have_flag(forge.art_flags, TR_IM_ACID)) ct++;
-            if (have_flag(forge.art_flags, TR_IM_COLD)) ct++;
-            if (have_flag(forge.art_flags, TR_IM_FIRE)) ct++;
-            if (have_flag(forge.art_flags, TR_IM_ELEC)) ct++;
-
-        /*    if (ct > 0)
-                msg_format("%s (Cost: %d)", buf, value);*/
+            if (have_flag(forge.flags, OF_IM_ACID)) ct++;
+            if (have_flag(forge.flags, OF_IM_COLD)) ct++;
+            if (have_flag(forge.flags, OF_IM_FIRE)) ct++;
+            if (have_flag(forge.flags, OF_IM_ELEC)) ct++;
         }
 
-        if (have_flag(forge.art_flags, TR_SPEED))
+        if (have_flag(forge.flags, OF_SPEED))
             ct_speed++;
 
-        if (have_flag(forge.art_flags, TR_BLOWS))
+        if (have_flag(forge.flags, OF_BLOWS))
             ct_blows++;
 
-        if (have_flag(forge.art_flags, TR_TELEPATHY))
+        if (have_flag(forge.flags, OF_TELEPATHY))
             ct_telepathy++;
 
-        if (have_flag(forge.art_flags, TR_AGGRAVATE))
+        if (have_flag(forge.flags, OF_AGGRAVATE))
             ct_aggravate++;
 
         if (immunity_hack)
@@ -217,33 +275,43 @@ static void do_cmd_wiz_hack_chris1(void)
             ct_would_be_immunities++;
         }
 
-        if ( have_flag(forge.art_flags, TR_WILD)
-          || have_flag(forge.art_flags, TR_ORDER) )
+        if ( have_flag(forge.flags, OF_BRAND_WILD)
+          || have_flag(forge.flags, OF_BRAND_ORDER) )
         {
         }
 
-        if (have_flag(forge.art_flags, TR_DARKNESS))
-        {
+        if (have_flag(forge.flags, OF_DARKNESS))
             ct_darkness++;
-        /*    drop_near(&forge, -1, py, px); */
+
+        if (have_flag(forge.flags, OF_SPELL_POWER))
+            ct_spell_power++;
+
+        {
+            _wiz_msg_ptr msg = _wiz_msg_alloc();
+            string_printf(msg->msg, "%s (%.1f%%)", buf, (double)value/(double)pow_base*100.0);
+            msg->score = value;
+            vec_add(results, msg);
         }
 
-        if (have_flag(forge.art_flags, TR_SPELL_POWER))
-        {
-            ct_spell_power++;
-        /*    drop_near(&forge, -1, py, px);*/
-        }
-        msg_format(" %d) %s (%.1f%%)", i+1, buf, (double)value/(double)pow_base*100.0);
-        /*drop_near(&forge, -1, py, px);*/
-        /*value = object_value_real(&forge);*/
+        /*msg_boundary();
+        msg_format(" %d) %s (%.1f%%)", i+1, buf, (double)value/(double)pow_base*100.0);*/
     }
 
+    vec_sort(results, (vec_cmp_f)_wiz_msg_cmp_score_desc);
+    for (i = 0; i < vec_length(results); i++)
+    {
+        _wiz_msg_ptr msg = vec_get(results, i);
+        msg_boundary();
+        msg_format(" %d) %s", i+1, string_buffer(msg->msg));
+    }
+    vec_free(results);
+
+    msg_boundary();
     msg_format("Generated %d artifacts. %d had immunity. %d had speed. %d had extra attacks.", ct, ct_immunity, ct_speed, ct_blows);
     msg_format("%d had telepathy. %d had aggravation.", ct_telepathy, ct_aggravate);
 /*    msg_format("%d had darkness. %d had spell power.", ct_darkness, ct_spell_power); */
     msg_format("%d would be immunities created.", ct_would_be_immunities);
     msg_format("%.2f average pval.", (double)ct_pval/(double)ct);
-
 }
 
 static bool _is_stat_potion(object_type *o_ptr)
@@ -309,17 +377,18 @@ static void _test_specific_k_idx(void)
         /*create_artifact(&forge, CREATE_ART_GOOD);*/
         apply_magic(&forge, object_level, 0);
 
-        if ( forge.name2 == EGO_RING_WIZARDRY
-          || forge.name2 == EGO_AMULET_MAGI
-          || forge.name2 == EGO_CROWN_MAGI )
+        if (forge.name2 == EGO_WEAPON_SLAYING)
         {
-            identify_item(&forge);
-            forge.ident |= (IDENT_FULL); 
+            obj_identify_fully(&forge);
         
-            object_desc(buf, &forge, 0);
-            msg_format("%s (%d)", buf, object_value_real(&forge));
-            if (forge.to_d)
+            object_desc(buf, &forge, OD_COLOR_CODED);
+            msg_format("%d) %s", i + 1, buf);
+            msg_boundary();
+            if ( have_flag(forge.flags, OF_BRAND_VAMP)
+              || have_flag(forge.flags, OF_BLOWS) )
+            {
                 drop_near(&forge, -1, py, px);
+            }
         }
     }
 }
@@ -373,14 +442,10 @@ static void do_cmd_wiz_hack_chris3_imp(FILE* file)
                 if (forge.weight > max)
                     max = forge.weight;
 
-                identify_item(&forge);
-                forge.ident |= (IDENT_FULL); 
+                obj_identify_fully(&forge);
                 object_desc(buf, &forge, 0);
                 fprintf(file, "%s %d.%d lbs\n", buf, forge.weight/10, forge.weight%10);
 
-                if (p_ptr->prace == RACE_MON_RING)
-                    ring_absorb_object(&forge);
-              
                 /*msg_print(buf);*/
 
                 if (0)
@@ -456,18 +521,17 @@ static void do_cmd_wiz_hack_chris4_imp(FILE* file)
             forge.to_d = a_ptr->to_d;
             forge.weight = a_ptr->weight;
 
-            if (a_ptr->gen_flags & TRG_CURSED) forge.curse_flags |= (TRC_CURSED);
-            if (a_ptr->gen_flags & TRG_HEAVY_CURSE) forge.curse_flags |= (TRC_HEAVY_CURSE);
-            if (a_ptr->gen_flags & TRG_PERMA_CURSE) forge.curse_flags |= (TRC_PERMA_CURSE);
+            if (a_ptr->gen_flags & OFG_CURSED) forge.curse_flags |= (OFC_CURSED);
+            if (a_ptr->gen_flags & OFG_HEAVY_CURSE) forge.curse_flags |= (OFC_HEAVY_CURSE);
+            if (a_ptr->gen_flags & OFG_PERMA_CURSE) forge.curse_flags |= (OFC_PERMA_CURSE);
 
             random_artifact_resistance(&forge, a_ptr);
 
-            identify_item(&forge);
-            forge.ident |= (IDENT_FULL); 
+            obj_identify_fully(&forge);
             object_desc(buf, &forge, 0);
 
             new_score = new_object_cost(&forge, COST_REAL);
-            old_score = object_value_real(&forge);
+            old_score = obj_value_real(&forge);
 
 
             fprintf(file, "%d\t%d\t%d\t%s\n", 
@@ -484,7 +548,7 @@ static void do_cmd_wiz_hack_chris4_imp(FILE* file)
         int k = randint1(max_k_idx);
         object_type forge;
 
-        if (k_info[k].gen_flags & TRG_INSTA_ART) continue;
+        if (k_info[k].gen_flags & OFG_INSTA_ART) continue;
 
         object_prep(&forge, k);
 
@@ -497,12 +561,11 @@ static void do_cmd_wiz_hack_chris4_imp(FILE* file)
 
             /*if (forge.name2)*/
             {
-                identify_item(&forge);
-                forge.ident |= (IDENT_FULL); 
+                obj_identify_fully(&forge);
                 object_desc(buf, &forge, 0);
 
                 new_score = new_object_cost(&forge, COST_REAL);
-                old_score = object_value_real(&forge);
+                old_score = obj_value_real(&forge);
 
                 fprintf(file, "%d\t%d\t%d\t%s\n", 
                     old_score,
@@ -586,8 +649,7 @@ static void do_cmd_wiz_hack_chris5(void)
         {
             char buf[MAX_NLEN];
             ct_success++;
-            identify_item(&forge);
-            forge.ident |= (IDENT_FULL); 
+            obj_identify_fully(&forge);
             object_desc(buf, &forge, OD_COLOR_CODED);
             msg_format("%d) <indent>%s</indent>", ct_tries, buf);
             msg_boundary();
@@ -635,11 +697,10 @@ static void do_cmd_wiz_hack_chris6_imp(FILE *file, bool replace)
                 forge.to_a = MAX(10, forge.to_a);
             }
         }
-        pow_base = object_value_real(&forge);
-        identify_item(&forge);
+        pow_base = obj_value_real(&forge);
         object_level = a_info[a_idx].level;
 
-        forge.ident |= (IDENT_FULL); 
+        obj_identify_fully(&forge);
         object_desc(buf, &forge, 0);
 
         fprintf(file, "====================================================================================================\n");
@@ -662,17 +723,15 @@ static void do_cmd_wiz_hack_chris6_imp(FILE *file, bool replace)
                 object_prep(&forge, k_idx);
                 create_artifact(&forge, CREATE_ART_GOOD);
             }
-            pow = object_value_real(&forge);
+            pow = obj_value_real(&forge);
             pow_tot += pow;
             pval_tot += forge.pval;
-            if (have_flag(forge.art_flags, TR_SPEED))
+            if (have_flag(forge.flags, OF_SPEED))
                 speed_tot += forge.pval;
-            if (have_flag(forge.art_flags, TR_BLOWS))
+            if (have_flag(forge.flags, OF_BLOWS))
                 att_tot += forge.pval;
-            identify_item(&forge);
+            obj_identify_fully(&forge);
 
-            forge.ident |= (IDENT_FULL); 
-        /*    forge.art_name = dummy_name; */
             object_desc(buf, &forge, 0);
 
             fprintf(file, "%s (%.1f%%)\n", buf, (double)pow/(double)pow_base*100.0);
@@ -739,25 +798,25 @@ typedef struct {
     int      ct2;
 } _obj_alloc_t;
 
-bool _ring_of_speed_p(object_type *o_ptr) { return o_ptr->tval == TV_RING && o_ptr->name2 == EGO_RING_SPEED; }
-bool _boots_of_speed_p(object_type *o_ptr) { return o_ptr->tval == TV_BOOTS && o_ptr->name2 == EGO_BOOTS_SPEED; }
-bool _potion_of_healing_p(object_type *o_ptr) { return object_is_(o_ptr, TV_POTION, SV_POTION_HEALING); }
-bool _potion_of_healing2_p(object_type *o_ptr) { return object_is_(o_ptr, TV_POTION, SV_POTION_STAR_HEALING); }
-bool _stat_potion_p(object_type *o_ptr) { return o_ptr->tval ==  TV_POTION && SV_POTION_INC_STR <= o_ptr->sval && o_ptr->sval <= SV_POTION_INC_CHR; }
-bool _third_book_p(object_type *o_ptr) { return o_ptr->tval >= TV_LIFE_BOOK && 2 == o_ptr->sval && o_ptr->tval != TV_ARCANE_BOOK; }
-bool _fourth_book_p(object_type *o_ptr) { return o_ptr->tval >= TV_LIFE_BOOK && 3 == o_ptr->sval && o_ptr->tval != TV_ARCANE_BOOK; }
-bool _scroll_of_destruction_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_STAR_DESTRUCTION); }
-bool _scroll_of_genocide_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_GENOCIDE); }
-bool _scroll_of_mass_genocide_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_MASS_GENOCIDE); }
-bool _wand_of_rockets_p(object_type *o_ptr) { return o_ptr->tval == TV_WAND && o_ptr->activation.type == EFFECT_ROCKET; }
-bool _ego_weapon_p(object_type *o_ptr) { return object_is_melee_weapon(o_ptr) && o_ptr->name2; }
-bool _ego_shooter_p(object_type *o_ptr) { return o_ptr->tval == TV_BOW && o_ptr->name2; }
-bool _ego_body_armor_p(object_type *o_ptr) { return object_is_body_armour(o_ptr) && o_ptr->name2; }
-bool _ego_helm_p(object_type *o_ptr) { return object_is_helmet(o_ptr) && o_ptr->name2; }
-bool _ego_cloak_p(object_type *o_ptr) { return o_ptr->tval == TV_CLOAK && o_ptr->name2; }
-bool _ego_boots_p(object_type *o_ptr) { return o_ptr->tval == TV_BOOTS && o_ptr->name2; }
-bool _ego_gloves_p(object_type *o_ptr) { return o_ptr->tval == TV_GLOVES && o_ptr->name2; }
-bool _mushroom_restoring_p(object_type *o_ptr) { return object_is_(o_ptr, TV_FOOD, SV_FOOD_RESTORING); }
+static bool _ring_of_speed_p(object_type *o_ptr) { return o_ptr->tval == TV_RING && o_ptr->name2 == EGO_RING_SPEED; }
+static bool _boots_of_speed_p(object_type *o_ptr) { return o_ptr->tval == TV_BOOTS && o_ptr->name2 == EGO_BOOTS_SPEED; }
+static bool _potion_of_healing_p(object_type *o_ptr) { return object_is_(o_ptr, TV_POTION, SV_POTION_HEALING); }
+static bool _potion_of_healing2_p(object_type *o_ptr) { return object_is_(o_ptr, TV_POTION, SV_POTION_STAR_HEALING); }
+static bool _stat_potion_p(object_type *o_ptr) { return o_ptr->tval ==  TV_POTION && SV_POTION_INC_STR <= o_ptr->sval && o_ptr->sval <= SV_POTION_INC_CHR; }
+static bool _third_book_p(object_type *o_ptr) { return o_ptr->tval >= TV_LIFE_BOOK && 2 == o_ptr->sval && o_ptr->tval != TV_ARCANE_BOOK; }
+static bool _fourth_book_p(object_type *o_ptr) { return o_ptr->tval >= TV_LIFE_BOOK && 3 == o_ptr->sval && o_ptr->tval != TV_ARCANE_BOOK; }
+static bool _scroll_of_destruction_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_STAR_DESTRUCTION); }
+static bool _scroll_of_genocide_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_GENOCIDE); }
+static bool _scroll_of_mass_genocide_p(object_type *o_ptr) { return object_is_(o_ptr, TV_SCROLL, SV_SCROLL_MASS_GENOCIDE); }
+static bool _wand_of_rockets_p(object_type *o_ptr) { return o_ptr->tval == TV_WAND && o_ptr->activation.type == EFFECT_ROCKET; }
+static bool _ego_weapon_p(object_type *o_ptr) { return object_is_melee_weapon(o_ptr) && o_ptr->name2; }
+static bool _ego_shooter_p(object_type *o_ptr) { return o_ptr->tval == TV_BOW && o_ptr->name2; }
+static bool _ego_body_armor_p(object_type *o_ptr) { return object_is_body_armour(o_ptr) && o_ptr->name2; }
+static bool _ego_helm_p(object_type *o_ptr) { return object_is_helmet(o_ptr) && o_ptr->name2; }
+static bool _ego_cloak_p(object_type *o_ptr) { return o_ptr->tval == TV_CLOAK && o_ptr->name2; }
+static bool _ego_boots_p(object_type *o_ptr) { return o_ptr->tval == TV_BOOTS && o_ptr->name2; }
+static bool _ego_gloves_p(object_type *o_ptr) { return o_ptr->tval == TV_GLOVES && o_ptr->name2; }
+static bool _mushroom_restoring_p(object_type *o_ptr) { return object_is_(o_ptr, TV_FOOD, SV_FOOD_RESTORING); }
 
 static _obj_alloc_t _hack7_data[] = {
     { "RoSpeed", _ring_of_speed_p, 0, 0 },
@@ -827,7 +886,7 @@ static void do_cmd_wiz_hack_chris7_imp(FILE* fff)
             }
 
             if (forge.name1)
-                a_info[forge.name1].cur_num = 0;
+                a_info[forge.name1].generated = FALSE;
 
             /*
             object_wipe(&forge);
@@ -882,30 +941,48 @@ static void do_cmd_wiz_hack_chris7(void)
     msg_print(NULL);
 }
 
+#define _MAX_PVAL 30
 static void do_cmd_wiz_hack_chris8(void)
 {
-    int k_idx = get_quantity("Enter k_idx: ", 1000);
-    int ct = get_quantity("How Many?", 10000);
-    int i;
+    int i, lvl;
 
-    for (i = 0; i < ct; i++)
+    for (lvl = 10; lvl <= 100; lvl += 10)
     {
-        object_type forge = {0};
-        char buf[MAX_NLEN];
+        int pvals[_MAX_PVAL] = {0};
+        int ct_objs = 0, tot_pvals = 0, ct_attempts = 10000;
 
-        object_prep(&forge, k_idx);
-        /*create_artifact(&forge, CREATE_ART_GOOD);*/
-        apply_magic(&forge, object_level, AM_GREAT);
-        identify_item(&forge);
-
-        if (forge.name2 == EGO_GLOVES_SNIPER)
+        for (i = 0; i < ct_attempts; i++)
         {
-            forge.ident |= (IDENT_FULL); 
-            object_desc(buf, &forge, OD_COLOR_CODED);
-            msg_format(" %d) %s", i+1, buf);
-            msg_boundary();
-            drop_near(&forge, -1, py, px);
+            object_type forge = {0};
+
+            object_prep(&forge, 132);
+            apply_magic(&forge, lvl, 0);
+            /*identify_item(&forge);*/
+
+            if (forge.name2 == EGO_RING_SPEED)
+            {
+                ct_objs++;
+                tot_pvals += forge.pval;
+                pvals[forge.pval]++;
+            }
         }
+
+        msg_boundary();
+        msg_format("<color:B>Level: %3d</color>", lvl);
+        for (i = _MAX_PVAL - 1; i >= 0; i--)
+        {
+            int ct = pvals[i];
+            if (ct)
+            {
+                msg_boundary();
+                msg_format("<color:r>+%2d</color>: %2d.%d%%", i, ct*100/ct_objs, (ct*1000/ct_objs)%10);
+            }
+        }
+
+        msg_boundary();
+        msg_format("%d.%2.2d%% rings of speed. Avg pval = %d.%2.2d.",
+            ct_objs*100/ct_attempts, (ct_objs*10000/ct_attempts)%100,
+            tot_pvals/ct_objs, (tot_pvals*100/ct_objs)%100);
     }
 }
 
@@ -920,7 +997,7 @@ static bool do_cmd_wiz_hack_chris9(void)
 
     src = &inventory[src_idx];
 
-    cost = object_value_real(src);
+    cost = obj_value_real(src);
     cost *= 10;
 
     msg_format("Reforging will cost you %d gold.", cost);
@@ -938,8 +1015,7 @@ static bool do_cmd_wiz_hack_chris9(void)
 
         object_copy(&forge, dest);
         reforge_artifact(src, &forge, p_ptr->fame);
-        identify_item(&forge);
-        forge.ident |= (IDENT_FULL); 
+        obj_identify_fully(&forge);
         object_desc(buf, &forge, OD_COLOR_CODED);
         msg_format(" %d) %s\n", i+1, buf);
     }
@@ -1347,11 +1423,11 @@ static void do_cmd_wiz_change(void)
 static void wiz_display_item(object_type *o_ptr)
 {
     int i, j = 13;
-    u32b flgs[TR_FLAG_SIZE];
+    u32b flgs[OF_ARRAY_SIZE];
     char buf[256];
 
     /* Extract the flags */
-    object_flags(o_ptr, flgs);
+    obj_flags(o_ptr, flgs);
 
     /* Clear the screen */
     for (i = 1; i <= 23; i++) prt("", i, j - 2);
@@ -1375,7 +1451,7 @@ static void wiz_display_item(object_type *o_ptr)
            o_ptr->pval, o_ptr->to_a, o_ptr->to_h, o_ptr->to_d), 6, j);
 
     prt(format("name1 = %-4d  name2 = %-4d  cost = %d",
-           o_ptr->name1, o_ptr->name2, object_value_real(o_ptr)), 7, j);
+           o_ptr->name1, o_ptr->name2, obj_value_real(o_ptr)), 7, j);
 
     prt(format("ident = %04x  xtra1 = %-4d  xtra2 = %-4d  timeout = %-d",
            o_ptr->ident, o_ptr->xtra1, o_ptr->xtra2, o_ptr->timeout), 8, j);
@@ -1676,7 +1752,7 @@ static void wiz_reroll_item(object_type *o_ptr)
             /* Preserve wizard-generated artifacts */
             if (object_is_fixed_artifact(q_ptr))
             {
-                a_info[q_ptr->name1].cur_num = 0;
+                a_info[q_ptr->name1].generated = FALSE;
                 q_ptr->name1 = 0;
             }
 
@@ -1694,7 +1770,7 @@ static void wiz_reroll_item(object_type *o_ptr)
         /* Preserve wizard-generated artifacts */
         if (object_is_fixed_artifact(q_ptr))
         {
-            a_info[q_ptr->name1].cur_num = 0;
+            a_info[q_ptr->name1].generated = FALSE;
             q_ptr->name1 = 0;
         }
 
@@ -1803,7 +1879,7 @@ static void wiz_statistics(object_type *o_ptr)
 
     /* XXX XXX XXX Mega-Hack -- allow multiple artifacts */
     if (object_is_fixed_artifact(o_ptr)) 
-        a_info[o_ptr->name1].cur_num = 0;
+        a_info[o_ptr->name1].generated = FALSE;
 
 
     /* Interact */
@@ -1886,7 +1962,7 @@ static void wiz_statistics(object_type *o_ptr)
 
             /* XXX XXX XXX Mega-Hack -- allow multiple artifacts */
             if (object_is_fixed_artifact(q_ptr)) 
-                a_info[q_ptr->name1].cur_num = 0;
+                a_info[q_ptr->name1].generated = FALSE;
 
 
             /* Test for the same tval and sval. */
@@ -1938,7 +2014,7 @@ static void wiz_statistics(object_type *o_ptr)
 
 
     /* Hack -- Normally only make a single artifact */
-    if (object_is_fixed_artifact(o_ptr)) a_info[o_ptr->name1].cur_num = 1;
+    if (object_is_fixed_artifact(o_ptr)) a_info[o_ptr->name1].generated = TRUE;
 }
 
 
@@ -2176,7 +2252,7 @@ static void wiz_create_item(void)
     /* Return if failed */
     if (!k_idx) return;
 
-    if (k_info[k_idx].gen_flags & TRG_INSTA_ART)
+    if (k_info[k_idx].gen_flags & OFG_INSTA_ART)
     {
         int i;
 
@@ -2190,7 +2266,8 @@ static void wiz_create_item(void)
             if (a_info[i].sval != k_info[k_idx].sval) continue;
 
             /* Create this artifact */
-            (void)create_named_art(i, py, px);
+            if (create_named_art(i, py, px))
+                a_info[i].generated = TRUE;
 
             /* All done */
             msg_print("Allocated(INSTA_ART).");
@@ -2502,12 +2579,7 @@ static void do_cmd_wiz_zap_all(void)
         /* Skip the mount */
         if (i == p_ptr->riding) continue;
 
-        /* Delete this monster */
-        {
-            bool fear = FALSE;
-            mon_take_hit(i, m_ptr->hp + 1, &fear, NULL);
-        }
-        /*delete_monster_idx(i);*/
+        delete_monster_idx(i);
     }
 }
 
@@ -2662,9 +2734,167 @@ extern void do_cmd_spoilers(void);
 
 #endif /* ALLOW_SPOILERS */
 
+
+static doc_ptr _wiz_doc = NULL;
+static bool    _wiz_show_scores = TRUE;
+
+static char _score_color(int score)
+{
+    if (score < 1000)
+        return 'D';
+    if (score < 10000)
+        return 'w';
+    if (score < 20000)
+        return 'W';
+    if (score < 40000)
+        return 'u';
+    if (score < 60000)
+        return 'y';
+    if (score < 80000)
+        return 'o';
+    if (score < 100000)
+        return 'R';
+    if (score < 150000)
+        return 'r';
+    return 'v';
+}
+
+#if 0
+static void _wiz_stats_log_android(int level, object_type *o_ptr)
+{
+    int  score = obj_value_real(o_ptr);
+    int  exp   = android_obj_exp(o_ptr);
+    char name[MAX_NLEN];
+    char buf[10];
+
+    if (!_wiz_doc) return;
+    if (!exp) return;
+
+    object_desc(name, o_ptr, OD_COLOR_CODED);
+
+    big_num_display(score, buf);
+    doc_printf(_wiz_doc, "<color:%c>%s</color> ", _score_color(score), buf);
+
+    big_num_display(exp, buf);
+    doc_printf(_wiz_doc, "<color:%c>%s</color>:", _score_color(exp/10), buf);
+
+    doc_printf(_wiz_doc, " <indent><style:indent>%s</style></indent>\n", name);
+}
+#endif
+
+static void _wiz_stats_log_obj(int level, object_type *o_ptr)
+{
+    char buf[MAX_NLEN];
+    if (!_wiz_doc) return;
+    object_desc(buf, o_ptr, OD_COLOR_CODED);
+    if (_wiz_show_scores)
+    {
+        int  score;
+        score = obj_value_real(o_ptr);
+        doc_printf(_wiz_doc, "CL%2d DL%2d <color:%c>%6d</color>: <indent><style:indent>%s</style></indent>\n",
+            p_ptr->lev, level, _score_color(score), score, buf);
+    }
+    else
+        doc_printf(_wiz_doc, "CL%2d DL%2d: <indent><style:indent>%s</style></indent>\n", p_ptr->lev, level, buf);
+}
+static void _wiz_stats_log_speed(int level, object_type *o_ptr)
+{
+    u32b flgs[OF_ARRAY_SIZE];
+    obj_flags(o_ptr, flgs);
+    if (have_flag(flgs, OF_SPEED) && !object_is_artifact(o_ptr))
+        _wiz_stats_log_obj(level, o_ptr);
+}
+static void _wiz_stats_log_books(int level, object_type *o_ptr, int max3, int max4)
+{
+    if ( (_third_book_p(o_ptr) && k_info[o_ptr->k_idx].counts.found < max3)
+      || (_fourth_book_p(o_ptr) && k_info[o_ptr->k_idx].counts.found < max4) )
+    {
+        if (check_book_realm(o_ptr->tval, o_ptr->sval))
+            _wiz_stats_log_obj(level, o_ptr);
+    }
+}
+static void _wiz_stats_log_devices(int level, object_type *o_ptr)
+{
+    if (_wand_of_rockets_p(o_ptr)) /* TODO */
+        _wiz_stats_log_obj(level, o_ptr);
+}
+static void _wiz_stats_log_arts(int level, object_type *o_ptr)
+{
+    if (o_ptr->name1)
+        _wiz_stats_log_obj(level, o_ptr);
+}
+static void _wiz_stats_log_rand_arts(int level, object_type *o_ptr)
+{
+    if (o_ptr->art_name)
+        _wiz_stats_log_obj(level, o_ptr);
+}
+static void _wiz_kill_monsters(int level)
+{
+    int i;
+
+    for (i = 1; i < m_max; i++)
+    {
+        monster_type *m_ptr = &m_list[i];
+        monster_race *r_ptr;
+        bool          fear = FALSE;
+        int           slot = equip_find_object(TV_SWORD, SV_RUNESWORD);
+
+        if (!m_ptr->r_idx) continue;
+        if (i == p_ptr->riding) continue;
+
+        /* Skip out of depth monsters */
+        r_ptr = &r_info[m_ptr->r_idx];
+        if (0 && r_ptr->level > level) continue;
+
+        mon_take_hit(i, m_ptr->hp + 1, &fear, NULL);
+        if (slot) rune_sword_kill(equip_obj(slot), r_ptr);
+    }
+}
+static void _wiz_inspect_objects(int level)
+{
+    race_t  *race_ptr = get_race();
+    class_t *class_ptr = get_class();
+    int      i;
+
+    for (i = 0; i < max_o_idx; i++)
+    {
+        object_type *o_ptr = &o_list[i];
+
+        if (!o_ptr->k_idx) continue;
+        if (o_ptr->tval == TV_GOLD) continue;
+        if (o_ptr->held_m_idx) continue;
+
+        /* Skip Vaults ...
+        if (cave[o_ptr->iy][o_ptr->ix].info & CAVE_ICKY) continue;*/
+
+        obj_identify_fully(o_ptr);
+        stats_on_identify(o_ptr);
+
+        if (o_ptr->art_name)
+            stats_add_rand_art(o_ptr);
+
+        if (o_ptr->name2)
+            stats_add_ego(o_ptr);
+
+        if (0) _wiz_stats_log_speed(level, o_ptr);
+        if (1) _wiz_stats_log_books(level, o_ptr, 20, 20);
+        if (0) _wiz_stats_log_devices(level, o_ptr);
+        if (0) _wiz_stats_log_arts(level, o_ptr);
+        if (0) _wiz_stats_log_rand_arts(level, o_ptr);
+
+        if (0 && o_ptr->name2 && !object_is_device(o_ptr) && !object_is_ammo(o_ptr))
+            _wiz_stats_log_obj(level, o_ptr);
+
+        if (race_ptr->destroy_object)
+            race_ptr->destroy_object(o_ptr);
+
+        if (class_ptr->destroy_object)
+            class_ptr->destroy_object(o_ptr);
+    }
+}
 static void _wiz_gather_stats(int which_dungeon, int level, int reps)
 {
-    int i, j;
+    int i;
     dungeon_type = which_dungeon;
     for (i = 0; i < reps; i++)
     {
@@ -2674,17 +2904,8 @@ static void _wiz_gather_stats(int which_dungeon, int level, int reps)
         p_ptr->energy_need = 0;
         change_floor();
 
-        /* Zap Everyone: This has been hacked to actually kill the monsters,
-           which updates statistics, grants experience, and generates drops. */
-        do_cmd_wiz_zap_all();
-
-        /* Identify all the Loot! What Fun!! */
-        for (j = 0; j < max_o_idx; j++)
-        {
-            if (!o_list[j].k_idx) continue;
-            if (o_list[j].tval == TV_GOLD) continue;
-            identify_item(&o_list[j]); /* statistics are updated here */
-        }
+        _wiz_kill_monsters(level);
+        _wiz_inspect_objects(level);
     }
 }
 
@@ -2849,8 +3070,7 @@ void do_cmd_debug(void)
         {
             if (!o_list[i].k_idx) continue;
             ct++;
-            identify_item(&o_list[i]);
-            o_list[i].ident |= IDENT_FULL;
+            obj_identify_fully(&o_list[i]);
             if (o_list[i].name1 || o_list[i].name2)
             {
                 object_desc(buf, &o_list[i], 0);
@@ -2976,6 +3196,7 @@ void do_cmd_debug(void)
             }
         }
         wiz_lite(FALSE);
+        if (1) detect_treasure(255);
         {
             int i, ct = 0;
             char buf[MAX_NLEN];
@@ -2985,8 +3206,7 @@ void do_cmd_debug(void)
                 if (o_list[i].tval == TV_GOLD) continue;
                 ct += o_list[i].number;
                 identify_item(&o_list[i]);
-                o_list[i].ident |= IDENT_FULL;
-                ego_aware(&o_list[i]);
+                obj_identify_fully(&o_list[i]);
                 if (o_list[i].name1 || o_list[i].name2)
                 {
                     object_desc(buf, &o_list[i], 0);
@@ -3071,27 +3291,33 @@ void do_cmd_debug(void)
     {
         /* Generate Statistics on object/monster distributions. Create a new
            character, run this command, then create a character dump
-           or browse the object knowledge command (~2). The game seems
-           to be left in a bad state, and it has crashed once for me, so
-           create a character dump right away. */
+           or browse the object knowledge command (~2). Wizard commands "A and "O
+           are also useful.*/
         int lev;
-        statistics_hack = TRUE; /* No messages, no damage, no prompts for stat gains, no AFC */
+        int max_depth = get_quantity("Max Depth? ", 100);
 
-        for (lev = 1; lev < 100; lev++)
+        _wiz_doc = doc_alloc(80);
+
+        statistics_hack = TRUE; /* No messages, no damage, no prompts for stat gains, no AFC */
+        for (lev = dun_level + 2; lev <= max_depth; lev += 2)
         {
             int reps = 1;
-            switch (lev)
-            {
-            case 30: reps =  5; break;
-            case 40: reps =  5; break;
-            case 60: reps =  5; break;
-            case 80: reps =  5; break;
-            case 98: reps =  5; break;
-            }
+
+            if (lev % 10 == 0) reps += 2;
+            if (lev % 20 == 0) reps += 2;
+            if (lev % 30 == 0) reps += 7;
 
             _wiz_gather_stats(DUNGEON_ANGBAND, lev, reps);
         }
         statistics_hack = FALSE;
+
+        if (doc_line_count(_wiz_doc))
+            doc_display(_wiz_doc, "Statistics", 0);
+        doc_free(_wiz_doc);
+        _wiz_doc = NULL;
+
+        viewport_verify();
+        do_cmd_redraw();
         break;
     }
     case '=':
@@ -3099,9 +3325,20 @@ void do_cmd_debug(void)
         /* In this version, we gather statistics on the current level of the
            current dungeon. You still want to start with a fresh character. */
         int reps = get_quantity("How many reps? ", 100);
+
+        _wiz_doc = doc_alloc(80);
+
         statistics_hack = TRUE;
         _wiz_gather_stats(dungeon_type, dun_level, reps);
         statistics_hack = FALSE;
+
+        if (doc_line_count(_wiz_doc))
+            doc_display(_wiz_doc, "Statistics", 0);
+        doc_free(_wiz_doc);
+        _wiz_doc = NULL;
+
+        viewport_verify();
+        do_cmd_redraw();
         break;
     }
     case '_':
@@ -3133,8 +3370,7 @@ void do_cmd_debug(void)
             }*/
 
             identify_item(&forge);
-            forge.ident |= IDENT_FULL;
-            ego_aware(&forge);
+            obj_identify_fully(&forge);
 
             object_desc(buf, &forge, 0);
             fail = device_calc_fail_rate(&forge);
@@ -3151,30 +3387,6 @@ void do_cmd_debug(void)
                 drop_near(&forge, -1, py, px);
             }
         }
-/*
-        int i, j, ct = 0;
-        object_type obj;
-        char buf[MAX_NLEN];
-
-        object_prep(&obj, 687);
-        apply_magic(&obj, 50, 0);
-        for (i = 0; i < max_r_idx; i++)
-        {
-            monster_race *r_ptr = &r_info[i];
-            if (r_ptr->level < 30) continue;
-            for (j = 0; j < r_ptr->r_akills; j++)
-            {
-                rune_sword_kill(&obj, r_ptr);
-                ct++;
-            }
-        }
-
-        identify_item(&obj);
-        obj.ident |= (IDENT_MENTAL);
-
-        object_desc(buf, &obj, 0);
-        msg_format("%d) %s", ct, buf);
-*/
         break;
     }
     case ';':

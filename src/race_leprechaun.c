@@ -245,29 +245,29 @@ static void _calc_bonuses(void)
     }
 }
 
-static void _get_flags(u32b flgs[TR_FLAG_SIZE]) 
+static void _get_flags(u32b flgs[OF_ARRAY_SIZE]) 
 {
     if (p_ptr->au >= 100 * 1000)
-        add_flag(flgs, TR_SPELL_CAP);
+        add_flag(flgs, OF_SPELL_CAP);
 
     if (p_ptr->au >= 1000 * 1000)
-        add_flag(flgs, TR_SPELL_POWER);
+        add_flag(flgs, OF_SPELL_POWER);
 
     switch (p_ptr->current_r_idx)
     {
     case MON_CHEERFUL_LEPRECHAUN:
-        add_flag(flgs, TR_SPEED);
+        add_flag(flgs, OF_SPEED);
         break;
     case MON_MALICIOUS_LEPRECHAUN:
-        add_flag(flgs, TR_SPEED);
-        add_flag(flgs, TR_LEVITATION);
-        add_flag(flgs, TR_VULN_LITE);
+        add_flag(flgs, OF_SPEED);
+        add_flag(flgs, OF_LEVITATION);
+        add_flag(flgs, OF_VULN_LITE);
         break;
     case MON_DEATH_LEPRECHAUN:
-        add_flag(flgs, TR_SPEED);
-        add_flag(flgs, TR_LEVITATION);
-        add_flag(flgs, TR_RES_NETHER);
-        add_flag(flgs, TR_VULN_LITE);
+        add_flag(flgs, OF_SPEED);
+        add_flag(flgs, OF_LEVITATION);
+        add_flag(flgs, OF_RES_NETHER);
+        add_flag(flgs, OF_VULN_LITE);
         break;
     }
 }
@@ -370,6 +370,7 @@ bool leprechaun_steal(int m_idx)
                 msg_format("You steal %d gold pieces worth of %s.", (int)loot.pval, o_name);
                 sound(SOUND_SELL);
                 p_ptr->au += loot.pval;
+                stats_on_gold_find(loot.pval);
                 p_ptr->redraw |= (PR_GOLD);
                 if (prace_is_(RACE_MON_LEPRECHAUN))
                     p_ptr->update |= (PU_BONUS | PU_HP | PU_MANA);

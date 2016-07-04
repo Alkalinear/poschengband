@@ -204,7 +204,6 @@ static talent_t _talents[_MAX_TALENTS][_MAX_TALENTS_PER_GROUP] =
     },
     /* CL25: Good Offense */
     {
-        { A_CON, "like a Draconian", {1, 0, 40, draconian_breath_spell}},
         { A_DEX, "like a Klackon", {9, 9, 40, spit_acid_spell}},
         { A_CON, "like a Balrog", {15, 10, 50, demon_breath_spell}},
         { A_WIS, "like a Blue-Mage", {20, 10,  40, brain_smash_spell}},
@@ -579,20 +578,16 @@ static void _calc_bonuses(void)
 {
     samurai_posture_calc_bonuses();
     monk_posture_calc_bonuses();
-    if (p_ptr->lev >= 30)
-        p_ptr->regenerate = TRUE;
 }
 static void _calc_stats(s16b stats[MAX_STATS])
 {
     samurai_posture_calc_stats(stats);
     monk_posture_calc_stats(stats);
 }
-static void _get_flags(u32b flgs[TR_FLAG_SIZE])
+static void _get_flags(u32b flgs[OF_ARRAY_SIZE])
 {
     samurai_posture_get_flags(flgs);
     monk_posture_get_flags(flgs);
-    if (p_ptr->lev >= 30)
-        add_flag(flgs, TR_REGEN);
 }
 
 static void _character_dump(doc_ptr doc)

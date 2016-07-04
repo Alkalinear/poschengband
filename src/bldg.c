@@ -225,7 +225,8 @@ static void arena_comm(int cmd)
 
                 prt("", 10, 0);
                 prt("", 11, 0);
-                p_ptr->au += 1000000L;
+                p_ptr->au += 1000000;
+                stats_on_gold_winnings(1000000);
                 msg_prompt("Press the space bar to continue", " ", PROMPT_NEW_LINE | PROMPT_FORCE_CHOICE);
                 p_ptr->arena_number++;
             }
@@ -984,6 +985,8 @@ static bool gamble_comm(int cmd)
             do
             {
                 p_ptr->au -= wager;
+                stats_on_gold_services(wager);
+
                 switch (cmd)
                 {
                  case BACT_IN_BETWEEN: /* Game of In-Between */
@@ -1154,6 +1157,7 @@ static bool gamble_comm(int cmd)
                     prt("YOU WON", 16, 37);
 
                     p_ptr->au += odds * wager;
+                    stats_on_gold_winnings(odds * wager);
                     sprintf(tmp_str, "Payoff: %d", odds);
 
                     prt(tmp_str, 17, 37);
@@ -1571,6 +1575,8 @@ static bool kakutoujou(void)
             battle_odds = MAX(wager+1, wager * battle_odds / 100);
             kakekin = wager;
             p_ptr->au -= wager;
+            stats_on_gold_services(wager);
+
             reset_tim_flags();
 
             /* Save the surface floor as saved floor */
@@ -1710,8 +1716,10 @@ static bool kankin(void)
             sprintf(buf, "Convert %s into money? ",o_name);
             if (get_check(buf))
             {
-                msg_format("You get %dgp.", 1000000 * o_ptr->number);
-                p_ptr->au += 1000000 * o_ptr->number;
+                int amt = 1000000 * o_ptr->number;
+                msg_format("You get %dgp.", amt);
+                p_ptr->au += amt;
+                stats_on_gold_winnings(amt);
                 p_ptr->redraw |= (PR_GOLD);
                 inven_item_increase(i, -o_ptr->number);
                 inven_item_describe(i);
@@ -1733,8 +1741,10 @@ static bool kankin(void)
             sprintf(buf, "Convert %s into money? ",o_name);
             if (get_check(buf))
             {
-                msg_format("You get %dgp.", 200000 * o_ptr->number);
-                p_ptr->au += 200000 * o_ptr->number;
+                int amt = 200000 * o_ptr->number;
+                msg_format("You get %dgp.", amt);
+                p_ptr->au += amt;
+                stats_on_gold_winnings(amt);
                 p_ptr->redraw |= (PR_GOLD);
                 inven_item_increase(i, -o_ptr->number);
                 inven_item_describe(i);
@@ -1756,8 +1766,10 @@ static bool kankin(void)
             sprintf(buf, "Convert %s into money? ",o_name);
             if (get_check(buf))
             {
-                msg_format("You get %dgp.", 100000 * o_ptr->number);
-                p_ptr->au += 100000 * o_ptr->number;
+                int amt = 100000 * o_ptr->number;
+                msg_format("You get %dgp.", amt);
+                p_ptr->au += amt;
+                stats_on_gold_winnings(amt);
                 p_ptr->redraw |= (PR_GOLD);
                 inven_item_increase(i, -o_ptr->number);
                 inven_item_describe(i);
@@ -1777,8 +1789,10 @@ static bool kankin(void)
             sprintf(buf, "Convert %s into money? ",o_name);
             if (get_check(buf))
             {
-                msg_format("You get %dgp.", (int)(r_info[today_mon].level * 50 + 100) * o_ptr->number);
-                p_ptr->au += (r_info[today_mon].level * 50 + 100) * o_ptr->number;
+                int amt = (int)(r_info[today_mon].level * 50 + 100) * o_ptr->number;
+                msg_format("You get %dgp.", amt);
+                p_ptr->au += amt;
+                stats_on_gold_winnings(amt);
                 p_ptr->redraw |= (PR_GOLD);
                 inven_item_increase(i, -o_ptr->number);
                 inven_item_describe(i);
@@ -1799,8 +1813,10 @@ static bool kankin(void)
             sprintf(buf, "Convert %s into money? ",o_name);
             if (get_check(buf))
             {
-                msg_format("You get %dgp.", (int)(r_info[today_mon].level * 30 + 60) * o_ptr->number);
-                p_ptr->au += (r_info[today_mon].level * 30 + 60) * o_ptr->number;
+                int amt = (int)(r_info[today_mon].level * 30 + 60) * o_ptr->number;
+                msg_format("You get %dgp.", amt);
+                p_ptr->au += amt;
+                stats_on_gold_winnings(amt);
                 p_ptr->redraw |= (PR_GOLD);
                 inven_item_increase(i, -o_ptr->number);
                 inven_item_describe(i);
@@ -1849,8 +1865,7 @@ static bool kankin(void)
                 mass_produce(&forge);
 
                 /* Identify it fully */
-                object_aware(&forge);
-                object_known(&forge);
+                obj_identify_fully(&forge);
 
                 /*
                  * Hand it --- Assume there is an empty slot.
@@ -1948,7 +1963,7 @@ void have_nightmare(int r_idx)
 
                   horror_desc[randint0(MAX_SAN_HORROR)], desc);
 
-    r_ptr->r_flags2 |= RF2_ELDRITCH_HORROR;
+    mon_lore_aux_2(r_ptr, RF2_ELDRITCH_HORROR);
 
     if (p_ptr->mimic_form != MIMIC_NONE)
     {
@@ -2177,11 +2192,15 @@ static bool inn_comm(int cmd)
                     if (p_ptr->pclass == CLASS_MAGIC_EATER)
                         magic_eater_restore_all();
 
-                    for (i = 0; i < INVEN_PACK; i++)
+                    for (i = 0; i < INVEN_TOTAL; i++)
                     {
-                        if (!inventory[i].k_idx) continue;
-                        if (!object_is_device(&inventory[i])) continue;
-                        device_regen_sp_aux(&inventory[i], 1000);
+                        object_type *o_ptr = &inventory[i];
+
+                        if (!o_ptr->k_idx) continue;
+                        if (object_is_device(o_ptr))
+                            device_regen_sp_aux(o_ptr, 1000);
+                        else if (o_ptr->timeout > 0)
+                            o_ptr->timeout = 0;
                     }
 
                     if (prev_hour >= 6 && prev_hour <= 17)
@@ -2568,9 +2587,8 @@ static bool _gamble_shop_aux(object_type *o_ptr)
     char buf[MAX_NLEN];
     int slot, auto_pick_idx;
 
-    identify_item(o_ptr);
-    ego_aware(o_ptr);
-    o_ptr->ident |= (IDENT_FULL);
+    obj_identify_fully(o_ptr);
+    stats_on_identify(o_ptr);
     object_desc(buf, o_ptr, OD_COLOR_CODED);
 
     clear_bldg(5, 10);
@@ -2719,13 +2737,13 @@ static bool _reforge_artifact(void)
         msg_print("You must choose an artifact for reforging.");
         return FALSE;
     }
-    if (object_value_real(src) > src_max_power)
+    if (obj_value_real(src) > src_max_power)
     {
         msg_print("You are not famous enough to reforge that item.");
         return FALSE;
     }
 
-    cost = object_value_real(src);
+    cost = obj_value_real(src);
     
     dest_max_power = cost / 2;
     if (dest_max_power < 1000) /* Reforging won't try to power match weak stuff ... */
@@ -2769,7 +2787,7 @@ static bool _reforge_artifact(void)
         return FALSE;
     }
 
-    if (have_flag(dest->art_flags, TR_NO_REMOVE))
+    if (have_flag(dest->flags, OF_NO_REMOVE))
     {
         msg_print("You cannot be reforged!");
         return FALSE;
@@ -2787,7 +2805,7 @@ static bool _reforge_artifact(void)
         return FALSE;
     }
 
-    if (object_value_real(dest) > dest_max_power)
+    if (obj_value_real(dest) > dest_max_power)
     {
         msg_print("This item is too powerful for the source artifact you have chosen.");
         return FALSE;
@@ -2802,12 +2820,11 @@ static bool _reforge_artifact(void)
     inven_item_increase(src_idx, -1);
     inven_item_describe(src_idx);
     p_ptr->au -= cost;
+    stats_on_gold_services(cost);
 
     msg_print("After several hours, you are presented your new artifact...");
 
-    object_aware(dest);
-    object_known(dest);
-    dest->ident |= IDENT_FULL;
+    obj_identify_fully(dest);
 
     p_ptr->update |= PU_BONUS;
     p_ptr->window |= (PW_INVEN | PW_EQUIP);
@@ -2897,11 +2914,11 @@ static bool enchant_item(int cost, int to_hit, int to_dam, int to_ac, bool is_gu
 
         object_copy(&copy, o_ptr);
         copy.curse_flags = 0;
-        remove_flag(copy.art_flags, TR_AGGRAVATE);
-        remove_flag(copy.art_flags, TR_NO_TELE);
-        remove_flag(copy.art_flags, TR_NO_MAGIC);
-        remove_flag(copy.art_flags, TR_DRAIN_EXP);
-        remove_flag(copy.art_flags, TR_TY_CURSE);
+        remove_flag(copy.flags, OF_AGGRAVATE);
+        remove_flag(copy.flags, OF_NO_TELE);
+        remove_flag(copy.flags, OF_NO_MAGIC);
+        remove_flag(copy.flags, OF_DRAIN_EXP);
+        remove_flag(copy.flags, OF_TY_CURSE);
         old_cost = new_object_cost(&copy, COST_REAL);
                 
         for (i = 0; i < 25; i++) /* TODO: Option for max. But +25 a pop is enough perhaps? */
@@ -3025,7 +3042,8 @@ static bool enchant_item(int cost, int to_hit, int to_dam, int to_ac, bool is_gu
         msg_format("Improved into %s for %d gold.", tmp_str, cost);
 
         p_ptr->au -= cost;
-        if (equip_is_valid_slot(item)) calc_android_exp();
+        stats_on_gold_services(cost);
+        if (equip_is_valid_slot(item)) android_calc_exp();
         return (TRUE);
     }
 }
@@ -3310,7 +3328,7 @@ static bool research_mon(void)
                 handle_stuff();
 
                 /* know every thing mode */
-                screen_roff(r_idx, 0x01);
+                mon_display(&r_info[r_idx]);
                 notpicked = FALSE;
 
                 /* XTRA HACK REMEMBER_IDX */
@@ -3643,6 +3661,7 @@ static void bldg_process_command(building_type *bldg, int i)
     if (paid)
     {
         p_ptr->au -= bcost;
+        stats_on_gold_services(bcost);
         if (prace_is_(RACE_MON_LEPRECHAUN))
             p_ptr->update |= (PU_BONUS | PU_HP | PU_MANA);
     }

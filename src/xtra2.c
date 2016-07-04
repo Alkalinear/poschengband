@@ -755,8 +755,14 @@ byte get_monster_drop_ct(monster_type *m_ptr)
         number = 0; /* Pets drop no stuff */
 
     /* No more farming quartz veins for millions in gold */
-    if ((r_ptr->flags2 & RF2_MULTIPLY) && r_ptr->r_akills > 600)
-        number = 0;
+    if (r_ptr->flags2 & RF2_MULTIPLY)
+    {
+        int cap = 600;
+        if (r_ptr->flags1 & RF1_ONLY_GOLD)
+            cap = 200; /* About 110k gp at DL21 */
+        if (r_ptr->r_akills > cap)
+            number = 0;
+    }
 
     /* No more farming summoners for drops (The Hoard, That Bat, Draconic Qs, etc) */
     if (m_ptr->parent_m_idx && !(r_ptr->flags1 & RF1_UNIQUE))
@@ -801,21 +807,27 @@ bool get_monster_drop(int m_idx, object_type *o_ptr)
     if (r_ptr->flags1 & RF1_DROP_GREAT) 
         mo_mode |= AM_GREAT;
 
-    if ( (r_ptr->flags1 & RF1_QUESTOR)
-      || (r_ptr->flags7 & RF7_GUARDIAN) )
+    obj_drop_theme = 0;
+    if (r_ptr->drop_theme && one_in_(2))
+        obj_drop_theme = r_ptr->drop_theme;
+    else /* Don't try to tailor themed drops since they could easily fail ... */
     {
-        if (one_in_(5))
-            mo_mode |= AM_TAILORED;
-    }
-    if (r_ptr->flags1 & RF1_UNIQUE)
-    {
-        if (one_in_(10))
-            mo_mode |= AM_TAILORED;
-    }
-    else if (r_ptr->flags1 & (RF1_DROP_GOOD | RF1_DROP_GREAT))
-    {
-        if (one_in_(30))
-            mo_mode |= AM_TAILORED;
+        if ( (r_ptr->flags1 & RF1_QUESTOR)
+          || (r_ptr->flags7 & RF7_GUARDIAN) )
+        {
+            if (one_in_(5))
+                mo_mode |= AM_TAILORED;
+        }
+        if (r_ptr->flags1 & RF1_UNIQUE)
+        {
+            if (one_in_(10))
+                mo_mode |= AM_TAILORED;
+        }
+        else if (r_ptr->flags1 & (RF1_DROP_GOOD | RF1_DROP_GREAT))
+        {
+            if (one_in_(30))
+                mo_mode |= AM_TAILORED;
+        }
     }
 
     coin_type = force_coin;
@@ -824,17 +836,24 @@ bool get_monster_drop(int m_idx, object_type *o_ptr)
 
     if (do_gold && (!do_item || (randint0(100) < 20)))
     {
-        if (!make_gold(o_ptr))
+        if (!make_gold(o_ptr, TRUE))
+        {
+            obj_drop_theme = 0;
             return FALSE;
+        }
     }
     else
     {
         if (!make_object(o_ptr, mo_mode))
+        {
+            obj_drop_theme = 0;
             return FALSE;
+        }
     }
 
     object_level = base_level;
     coin_type = 0;
+    obj_drop_theme = 0;
 
     return TRUE;    
 }
@@ -942,13 +961,14 @@ static bool _kind_is_utility(int k_idx)
         case SV_SCROLL_PHASE_DOOR:
         case SV_SCROLL_WORD_OF_RECALL:
         case SV_SCROLL_IDENTIFY:
-        case SV_SCROLL_STAR_IDENTIFY:
         case SV_SCROLL_REMOVE_CURSE:
         case SV_SCROLL_STAR_REMOVE_CURSE:
         case SV_SCROLL_MAPPING:
         case SV_SCROLL_PROTECTION_FROM_EVIL:
         case SV_SCROLL_DETECT_MONSTERS:
             return TRUE;
+        case SV_SCROLL_STAR_IDENTIFY:
+            return easy_id ? FALSE : TRUE;
         }
         break;
 
@@ -1270,7 +1290,7 @@ void monster_death(int m_idx, bool drop_item)
     }
     case MON_BLOODLETTER:
         /* Bloodletters of Khorne may drop a blade of chaos */
-        if (drop_chosen_item && (randint1(100) < 15))
+        if (drop_chosen_item && one_in_(20))
         {
             /* Get local object */
             q_ptr = &forge;
@@ -1377,25 +1397,27 @@ void monster_death(int m_idx, bool drop_item)
 
                 a_ptr = &a_info[a_idx];
             }
-            while (a_ptr->cur_num);
+            while (a_ptr->generated);
 
             /* Create the artifact */
             if (create_named_art(a_idx, y, x))
             {
-                a_ptr->cur_num = 1;
+                a_ptr->generated = TRUE;
 
                 /* Hack -- Memorize location of artifact in saved floors */
                 if (character_dungeon) a_ptr->floor_id = p_ptr->floor_id;
             }
             else if (!preserve_mode) 
-                a_ptr->cur_num = 1;
+                a_ptr->generated = TRUE;
         }
         break;
 
     case MON_SERPENT:
         if (!drop_chosen_item) break;
-        create_named_art(ART_GROND, py, px);
-        create_named_art(ART_CHAOS, py, px);
+        if (create_named_art(ART_GROND, y, x))
+            a_info[ART_GROND].generated = TRUE;
+        if (create_named_art(ART_CHAOS, y, x))
+            a_info[ART_CHAOS].generated = TRUE;
         break;
 
     case MON_B_DEATH_SWORD:
@@ -1855,7 +1877,7 @@ void monster_death(int m_idx, bool drop_item)
 
         case MON_JACK_SHADOWS:
             a_idx = ART_JACK;
-            chance = 15;
+            chance = 33;
             break;
 
         case MON_DIO:
@@ -2099,18 +2121,18 @@ void monster_death(int m_idx, bool drop_item)
         {
             artifact_type *a_ptr = &a_info[a_idx];
 
-            if (!a_ptr->cur_num)
+            if (!a_ptr->generated)
             {
                 /* Create the artifact */
                 if (create_named_art(a_idx, y, x))
                 {
-                    a_ptr->cur_num = 1;
+                    a_ptr->generated = TRUE;
 
                     /* Hack -- Memorize location of artifact in saved floors */
                     if (character_dungeon) a_ptr->floor_id = p_ptr->floor_id;
                 }
                 else if (!preserve_mode) 
-                    a_ptr->cur_num = 1;
+                    a_ptr->generated = TRUE;
             }
         }
 
@@ -2127,18 +2149,18 @@ void monster_death(int m_idx, bool drop_item)
                 int a_idx = d_info[dungeon_type].final_artifact;
                 artifact_type *a_ptr = &a_info[a_idx];
 
-                if (!a_ptr->cur_num)
+                if (!a_ptr->generated)
                 {
                     /* Create the artifact */
                     if (create_named_art(a_idx, y, x))
                     {
-                        a_ptr->cur_num = 1;
+                        a_ptr->generated = TRUE;
 
                         /* Hack -- Memorize location of artifact in saved floors */
                         if (character_dungeon) a_ptr->floor_id = p_ptr->floor_id;
                     }
                     else if (!preserve_mode) 
-                        a_ptr->cur_num = 1;
+                        a_ptr->generated = TRUE;
 
                     /* Prevent rewarding both artifact and "default" object */
                     if (!d_info[dungeon_type].final_object) k_idx = 0;
@@ -2291,6 +2313,24 @@ void monster_death(int m_idx, bool drop_item)
             drop_near(&forge, -1, y, x);
             j++;
         }
+    }
+
+    if ( r_ptr->level
+      && ( (r_ptr->flags1 & (RF1_DROP_GOOD | RF1_DROP_GREAT))
+        || (r_ptr->flags2 & RF2_THIEF) ) )
+    {
+        int r = (r_ptr->flags1 & RF1_DROP_GREAT) ? 7 : 3;
+        int n = randint0(r);
+        int i;
+
+        object_level = (MAX(base_level, dun_level) + r_ptr->level) / 2;
+        for (i = 0; i < n; i++)
+        {
+            object_type gold = {0};
+            if (make_gold(&gold, TRUE))
+                drop_near(&gold, -1, y, x);
+        }
+        object_level = base_level;
     }
 
     if (visible && (dump_item || dump_gold))
@@ -2727,7 +2767,7 @@ bool mon_take_hit(int m_idx, int dam, bool *fear, cptr note)
     if (!m_idx) return TRUE;
 
     if (dam > 0 && (p_ptr->wizard || cheat_xtra))
-        msg_format("You do %d (out of %d) damage.", dam, m_ptr->hp);
+        msg_format("You do %d damage.", dam);
 
     if ( p_ptr->melt_armor
       && note == NULL /* Hack: Trying to just get melee and shooting */
@@ -2762,7 +2802,7 @@ bool mon_take_hit(int m_idx, int dam, bool *fear, cptr note)
         monster_desc(m_name, m_ptr, MD_TRUE_NAME);
 
         if (p_ptr->tim_killing_spree)
-            set_fast(p_ptr->fast + 5, FALSE);
+            set_fast(p_ptr->fast + 10, FALSE);
 
         if (r_info[m_ptr->r_idx].flags7 & RF7_TANUKI)
         {
@@ -2848,8 +2888,8 @@ bool mon_take_hit(int m_idx, int dam, bool *fear, cptr note)
             }
         }
 
-        /* Recall even invisible uniques or winners */
-        if ((m_ptr->ml && !p_ptr->image) || (r_ptr->flags1 & RF1_UNIQUE))
+        /* Recall even invisible uniques or winners (or statistics gathering runs :) */
+        if ((m_ptr->ml && !p_ptr->image) || (r_ptr->flags1 & RF1_UNIQUE) || statistics_hack)
         {
             /* Count kills this life */
             if ((m_ptr->mflag2 & MFLAG2_KAGE) && (r_info[MON_KAGE].r_pkills < MAX_SHORT)) r_info[MON_KAGE].r_pkills++;
@@ -3940,14 +3980,18 @@ static int target_set_aux(int y, int x, int mode, cptr info)
             /* Recall */
             if (recall)
             {
+                doc_ptr doc = doc_alloc(72);
+
                 /* Save */
                 screen_save();
 
                 /* Recall on screen */
-                screen_roff(m_ptr->ap_r_idx, 0);
+                mon_display_doc(&r_info[m_ptr->ap_r_idx], doc);
+                doc_sync_term(doc, doc_range_all(doc), doc_pos_create(0, 1));
+                doc_free(doc);
 
-                /* Hack -- Complete the prompt (again) */
-                Term_addstr(-1, TERM_WHITE, format("  [r,%s%s]", x_info, info));
+                /* Hack -- Complete the prompt (again)
+                Term_addstr(-1, TERM_WHITE, format("  [r,%s%s]", x_info, info));*/
 
                 /* Command */
                 query = inkey();

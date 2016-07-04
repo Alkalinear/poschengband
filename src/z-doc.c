@@ -290,6 +290,11 @@ int doc_line_count(doc_ptr doc)
     return doc_region_line_count(&r);
 }
 
+int doc_width(doc_ptr doc)
+{
+    return doc->width;
+}
+
 doc_region_t doc_range_all(doc_ptr doc)
 {
     doc_region_t result;
@@ -1501,6 +1506,11 @@ void doc_rollback(doc_ptr doc, doc_pos_t pos)
     r.stop = doc->cursor;
     _doc_for_each(doc, r, _doc_clear_char);
     doc->cursor = pos;
+}
+
+void doc_clear(doc_ptr doc)
+{
+    doc_rollback(doc, doc_pos_create(0, 0));
 }
 
 void doc_sync_term(doc_ptr doc, doc_region_t range, doc_pos_t term_pos)

@@ -635,7 +635,7 @@ static void autopick_entry_from_object(autopick_type *entry, object_type *o_ptr)
                  * are almost meaningless.
                  * Register the ego type only.
                  */
-                ego_item_type *e_ptr = &e_info[o_ptr->name2];
+                ego_type *e_ptr = &e_info[o_ptr->name2];
                 /* We ommit the basename and cannot use the ^ mark */
                 strcpy(name_str, e_name + e_ptr->name);
 
@@ -1257,7 +1257,7 @@ static bool is_autopick_aux(object_type *o_ptr, autopick_type *entry, cptr o_nam
 
     /*** *Identified* ***/
     if (IS_FLG(FLG_STAR_IDENTIFIED) &&
-        (!object_is_known(o_ptr) || !(o_ptr->ident & IDENT_FULL)))
+        (!object_is_known(o_ptr) || !obj_is_identified_fully(o_ptr)))
         return FALSE;
 
     /*** Dice boosted (weapon of slaying) ***/
@@ -1337,13 +1337,13 @@ static bool is_autopick_aux(object_type *o_ptr, autopick_type *entry, cptr o_nam
 
     if (IS_FLG(FLG_MORE_VALUE))
     {
-        int value = object_value(o_ptr);
+        int value = obj_value(o_ptr);
         if (value <= entry->value)
             return FALSE;
     }
 
     /*** Worthless items ***/
-    if (IS_FLG(FLG_WORTHLESS) && object_value(o_ptr) > 0)
+    if (IS_FLG(FLG_WORTHLESS) && obj_value(o_ptr) > 0)
         return FALSE;
 
     /*** Artifact object ***/
@@ -1413,7 +1413,7 @@ static bool is_autopick_aux(object_type *o_ptr, autopick_type *entry, cptr o_nam
         else if (p_ptr->pclass == CLASS_NINJA)
         {
             if ( o_ptr->tval == TV_LITE 
-              && (o_ptr->name2 == EGO_LITE_DARKNESS || have_flag(o_ptr->art_flags, TR_DARKNESS))
+              && (o_ptr->name2 == EGO_LITE_DARKNESS || have_flag(o_ptr->flags, OF_DARKNESS))
               && object_is_known(o_ptr))
             {
                 is_special = TRUE;
@@ -1900,7 +1900,7 @@ static bool is_opt_confirm_destroy(object_type *o_ptr)
 			   non-zero values). However, a subsequent option may keep them
 			   around (e.g. leave_special or leave_equip) */
 		}
-		else if (object_value(o_ptr) > 0) 
+		else if (obj_value(o_ptr) > 0) 
 			return FALSE;
 	}
 
@@ -1944,7 +1944,7 @@ static bool is_opt_confirm_destroy(object_type *o_ptr)
         else if (p_ptr->pclass == CLASS_NINJA)
         {
             if ( o_ptr->tval == TV_LITE 
-              && (o_ptr->name2 == EGO_LITE_DARKNESS || have_flag(o_ptr->art_flags, TR_DARKNESS))
+              && (o_ptr->name2 == EGO_LITE_DARKNESS || have_flag(o_ptr->flags, OF_DARKNESS))
               && object_is_known(o_ptr))
             {
                 return FALSE;
@@ -2058,8 +2058,11 @@ static void autopick_delayed_alter_aux(int item, bool detailed_msg)
 
     if (o_ptr->k_idx && (o_ptr->marked & OM_AUTODESTROY))
     {
-        char o_name[MAX_NLEN];
-        bool msg = FALSE;
+        char     o_name[MAX_NLEN];
+        bool     msg = FALSE;
+        race_t  *race_ptr = get_race();
+        class_t *class_ptr = get_class();
+        bool     handled = FALSE;
 
         if (destroy_debug)
         {
@@ -2068,13 +2071,13 @@ static void autopick_delayed_alter_aux(int item, bool detailed_msg)
         }
         stats_on_p_destroy(o_ptr, o_ptr->number);
 
-        if (prace_is_(RACE_MON_JELLY))
-            jelly_eat_object(o_ptr);
-        else if (prace_is_(RACE_MON_SWORD) && object_is_melee_weapon(o_ptr))
-            sword_absorb_object(o_ptr);
-        else if (prace_is_(RACE_MON_RING) && object_is_jewelry(o_ptr))
-            ring_absorb_object(o_ptr);
-        else
+        if (!handled && race_ptr->destroy_object)
+            handled = race_ptr->destroy_object(o_ptr);
+
+        if (!handled && class_ptr->destroy_object)
+            handled = class_ptr->destroy_object(o_ptr);
+
+        if (!handled)
         {
             if (detailed_msg)
                 object_desc(o_name, o_ptr, OD_COLOR_CODED);
@@ -2346,8 +2349,8 @@ bool autopick_auto_id(object_type *o_ptr)
 void autopick_pickup_items(cave_type *c_ptr)
 {
     s16b this_o_idx, next_o_idx = 0;
-    bool auto_lore = p_ptr->loremaster;
-    bool auto_sense = p_ptr->lev >= 35;
+    bool auto_id = p_ptr->auto_id;
+    bool auto_pseudo_id = p_ptr->auto_pseudo_id;
     
     /* Scan the pile of objects */
     for (this_o_idx = c_ptr->o_idx; this_o_idx; this_o_idx = next_o_idx)
@@ -2363,10 +2366,16 @@ void autopick_pickup_items(cave_type *c_ptr)
         /* Identify or Pseudo-Identify before applying pickup rules */
         if (o_ptr->tval != TV_GOLD)
         {
-            if (auto_lore)
+            if (auto_id)
+            {
                 identify_item(o_ptr);
-            if (auto_sense)
+                equip_learn_flag(OF_LORE2);
+            }
+            else if (auto_pseudo_id)
+            {
                 _sense_object_floor(o_ptr);
+                equip_learn_flag(OF_LORE1);
+            }
         }
 
         idx = is_autopick(o_ptr);

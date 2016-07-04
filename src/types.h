@@ -112,6 +112,15 @@ struct counts_s
 };
 typedef struct counts_s counts_t;
 
+typedef struct {
+    s32b found;
+    s32b selling;
+    s32b buying;
+    s32b services;
+    s32b winnings;
+    s32b stolen;
+} gold_counts_t;
+
 /*
  * Information about object "kinds", including player knowledge.
  *
@@ -143,7 +152,7 @@ struct object_kind
 
     s32b cost;            /* Object "base cost" */
 
-    u32b flags[TR_FLAG_SIZE];    /* Flags */
+    u32b flags[OF_ARRAY_SIZE];    /* Flags */
 
     u32b gen_flags;        /* flags for generate */
     byte stack_chance;
@@ -212,7 +221,9 @@ struct artifact_type
 
     s32b cost;            /* Artifact "cost" */
 
-    u32b     flags[TR_FLAG_SIZE];       /* Artifact Flags */
+    u32b     flags[OF_ARRAY_SIZE];       /* Artifact Flags */
+    u32b     known_flags[OF_ARRAY_SIZE];
+
     effect_t activation;
     u32b     activation_msg;
 
@@ -221,8 +232,8 @@ struct artifact_type
     byte level;            /* Artifact level */
     byte rarity;        /* Artifact rarity */
 
-    byte cur_num;        /* Number created (0 or 1) */
-    byte max_num;        /* Unused (should be "1") */
+    bool generated; /* Artifact has been created, but possibly yet to be discovered */
+    bool found;     /* Player has found and identified this artifact */
 
     s16b floor_id;          /* Leaved on this location last time */
 };
@@ -232,18 +243,22 @@ struct artifact_type
  * Information about "ego-items".
  */
 
-typedef struct ego_item_type ego_item_type;
+typedef struct ego_type ego_type;
 
-struct ego_item_type
+struct ego_type
 {
+    u32b id;
     u32b name;            /* Name (offset) */
     u32b text;            /* Text (offset) */
 
-    byte type;            /* Type of Ego (Bow, Weapon, Gloves, Helmet, Crown, Harp, etc) */
+    u32b type;            /* Type Flags (Bow, Weapon, Gloves, Helmet, Crown, Harp, etc)
+                             Note: Due to object lore, it is very useful to share the same
+                             ego type across different equipment slots. For example,
+                             Elemental Protection can appear on multiple armor types. */
 
-    byte level;            /* Minimum level */
-    byte rarity;        /* Object rarity */
-    byte max_level;     /* Maximum level. 0 => No restriction */
+    byte level;           /* Minimum level */
+    byte rarity;          /* Object rarity */
+    byte max_level;       /* Maximum level. 0 => No restriction */
 
     s16b max_to_h;        /* Maximum to-hit bonus */
     s16b max_to_d;        /* Maximum to-dam bonus */
@@ -251,12 +266,13 @@ struct ego_item_type
 
     byte max_pval;        /* Maximum pval */
 
-    u32b flags[TR_FLAG_SIZE];    /* Ego-Item Flags */
+    u32b flags[OF_ARRAY_SIZE];    /* Ego-Item Flags */
+    u32b known_flags[OF_ARRAY_SIZE];
+    u32b xtra_flags[OF_ARRAY_SIZE];
 
     u32b gen_flags;        /* flags for generate */
     effect_t activation;
 
-    bool aware;
     counts_t counts;
 };
 
@@ -339,9 +355,13 @@ struct object_type
 
     byte feeling;          /* Game generated inscription number (eg, pseudo-id) */
 
-    u32b art_flags[TR_FLAG_SIZE];        /* Extra Flags for ego and artifacts */
+    u32b flags[OF_ARRAY_SIZE];        /* Extra Flags for ego and artifacts */
 
     u32b curse_flags;        /* Flags for curse */
+
+    u32b known_flags[OF_ARRAY_SIZE];
+    u32b known_curse_flags;
+
     u32b rune;
 
     s16b next_o_idx;    /* Next object in stack (if any) */
@@ -436,57 +456,54 @@ struct monster_race
     u32b name;                /* Name (offset) */
     u32b text;                /* Text (offset) */
 
-    byte hdice;                /* Creatures hit dice count */
-    byte hside;                /* Creatures hit dice sides */
+    byte hdice;               /* Creatures hit dice count */
+    byte hside;               /* Creatures hit dice sides */
+    s16b ac;                  /* Armour Class */
 
-    s16b ac;                /* Armour Class */
-
-    s16b sleep;                /* Inactive counter (base) */
-    byte aaf;                /* Area affect radius (1-100) */
-    byte speed;                /* Speed (normally 110) */
+    s16b sleep;               /* Inactive counter (base) */
+    byte aaf;                 /* Area affect radius (1-100) */
+    byte speed;               /* Speed (normally 110) */
 
     s32b mexp;                /* Exp value for kill */
 
-    s16b weight;            
+    s16b weight;
+    byte freq_spell;          /* Spell frequency */
+    byte drop_theme;
 
-    byte freq_spell;        /* Spell frequency */
+    u32b flags1;              /* Flags 1 (general) */
+    u32b flags2;              /* Flags 2 (abilities) */
+    u32b flags3;              /* Flags 3 (race/resist) */
+    u32b flags4;              /* Flags 4 (inate/breath) */
+    u32b flags5;              /* Flags 5 (normal spells) */
+    u32b flags6;              /* Flags 6 (special spells) */
+    u32b flags7;              /* Flags 7 (movement related abilities) */
+    u32b flags8;              /* Flags 8 (wilderness info) */
+    u32b flags9;              /* Flags 9 (drops info; possessor info) */
+    u32b flagsr;              /* Flags R (resistances info) */
 
-    u32b flags1;            /* Flags 1 (general) */
-    u32b flags2;            /* Flags 2 (abilities) */
-    u32b flags3;            /* Flags 3 (race/resist) */
-    u32b flags4;            /* Flags 4 (inate/breath) */
-    u32b flags5;            /* Flags 5 (normal spells) */
-    u32b flags6;            /* Flags 6 (special spells) */
-    u32b flags7;            /* Flags 7 (movement related abilities) */
-    u32b flags8;            /* Flags 8 (wilderness info) */
-    u32b flags9;            /* Flags 9 (drops info) */
-    u32b flagsr;            /* Flags R (resistances info) */
-
-    monster_blow blow[4];    /* Up to four blows per round */
+    monster_blow blow[4];
 
     s16b next_r_idx;
     u32b next_exp;
 
-    byte level;                /* Level of creature */
+    byte level;               /* Level of creature */
     byte melee_level;
     byte save_level;
-    byte rarity;            /* Rarity of creature */
+    byte rarity;              /* Rarity of creature */
+
     s16b max_level;
+    s16b id;
 
 
-    byte d_attr;            /* Default monster attribute */
-    byte d_char;            /* Default monster character */
+    byte d_attr;              /* Default monster attribute */
+    byte d_char;              /* Default monster character */
+    byte x_attr;              /* Desired monster attribute */
+    byte x_char;              /* Desired monster character */
 
 
-    byte x_attr;            /* Desired monster attribute */
-    byte x_char;            /* Desired monster character */
-
-
-    byte max_num;            /* Maximum population allowed per level */
-
-    byte cur_num;            /* Monster population on current level */
-
-    s16b floor_id;                  /* Location of unique monster */
+    byte max_num;             /* Maximum population allowed per level */
+    byte cur_num;             /* Monster population on current level */
+    s16b floor_id;            /* Location of unique monster */
 
 
     s16b r_sights;            /* Count sightings of this monster */
@@ -496,20 +513,20 @@ struct monster_race
     s16b r_akills;            /* Count all monsters killed in this life */
     s16b r_tkills;            /* Count monsters killed in all lives */
 
-    s16b r_skills;          /* Count all summons killed in this life */
+    s16b r_skills;            /* Count all summons killed in this life */
 
-    byte r_wake;            /* Number of times woken up (?) */
+    byte r_wake;              /* Number of times woken up (?) */
     byte r_ignore;            /* Number of times ignored (?) */
 
-    byte r_xtra1;            /* Flags for Evolution and Possessor Body Info */
-    byte r_xtra2;            /* Something (unused) */
+    byte r_xtra1;             /* Flags for Evolution and Possessor Body Info */
+    byte r_xtra2;             /* Something (unused) */
 
-    byte r_drop_gold;        /* Max number of gold dropped at once */
-    byte r_drop_item;        /* Max number of item dropped at once */
+    byte r_drop_gold;         /* Max number of gold dropped at once */
+    byte r_drop_item;         /* Max number of item dropped at once */
 
     byte r_cast_spell;        /* Max number of other spells seen */
 
-    byte r_blows[4];        /* Number of times each blow type was seen */
+    byte r_blows[4];          /* Number of times each blow type was seen */
 
     u32b r_flags1;            /* Observed racial flags */
     u32b r_flags2;            /* Observed racial flags */
@@ -568,6 +585,8 @@ struct monster_race
 #define ROOM_THEME_NIGHT       0x0008  /* Useful for wilderness graveyards where monsters only spawn at night */
 #define ROOM_THEME_DAY         0x0010
 #define ROOM_THEME_FORMATION   0x0020  /* Hack (see source for details): Allows monster formations. */
+#define ROOM_SHOP              0x2000  /* Room is a shop ... NO_TOWN means multiple shops on same level
+                                          would all stock the same stuff. This is still a wilderness problem, though */
 #define ROOM_DEBUG             0x4000  /* For debugging ... force this template to always be chosen */
 #define ROOM_NO_ROTATE         0x8000
 
@@ -789,7 +808,7 @@ typedef struct {
     s16b leader_idx;
     s16b count;
     s16b ai;            /* How is the pack behaving? */
-    s16b guard_m_idx;    /* Pack is guarding another monster, perhaps the leader */
+    s16b guard_idx;     /* Pack is guarding another monster, perhaps the leader. Or, this is a dungeon entrance being guarded. */
     s16b guard_x;       /* Pack is defending a specific location */
     s16b guard_y;
     s16b distance;
@@ -1034,7 +1053,6 @@ struct player_pact
     int  dis_to_d;
     int  to_dd;
     int  to_ds;
-    int  to_mult;
     int  base_blow;
     int  xtra_blow;
     bool genji;
@@ -1043,7 +1061,7 @@ struct player_pact
     bool riding_wield;
     int  giant_wield;
     int  dual_wield_pct; /* Scaled by 10 so 123 = 12.3%. Set to 1000 (ie 100%) if not dual wielding */
-    u32b flags[TR_FLAG_SIZE];
+    u32b flags[OF_ARRAY_SIZE];
     byte info_attr;
     cptr info;
 } weapon_info_t, *weapon_info_ptr;
@@ -1060,13 +1078,13 @@ typedef struct {
     int num_fire;
     byte tval_ammo;
     bool heavy_shoot;
-    u32b flags[TR_FLAG_SIZE];
+    u32b flags[OF_ARRAY_SIZE];
 } shooter_info_t;
 
 typedef struct {
     int to_dd;
     int xtra_blow;
-    u32b flags[TR_FLAG_SIZE]; /* TODO */
+    u32b flags[OF_ARRAY_SIZE]; /* TODO */
 } innate_attack_info_t;
 
 typedef struct player_type player_type;
@@ -1501,23 +1519,23 @@ struct player_type
     bool sustain_con;    /* Keep constitution */
     bool sustain_chr;    /* Keep charisma */
 
-    u32b cursed;            /* Player is cursed */
+    u32b cursed;         /* Player is cursed */
 
-    bool can_swim;        /* No damage falling */
-    bool levitation;        /* No damage falling */
-    bool lite;        /* Permanent light */
-    bool free_act;        /* Never paralyzed */
+    bool can_swim;       /* No damage falling */
+    bool levitation;     /* No damage falling */
+    bool lite;           /* Permanent light */
+    bool free_act;       /* Never (?) paralyzed */
     bool see_inv;        /* Can see invisible */
-    bool regenerate;    /* Regenerate hit pts */
-    bool super_regenerate;
-    bool hold_life;        /* Resist life draining */
+    s16b regen;          /* Rate of regeneration: 100 = 100%, 200 = 200%, etc. */
+    bool hold_life;      /* Resist life draining */
 
-    bool loremaster;
+    bool auto_id;
+    bool auto_pseudo_id;
     int  auto_id_sp;
     bool cult_of_personality;
     bool fairy_stealth;
 
-    bool telepathy;        /* Telepathy */
+    bool telepathy;      /* Telepathy */
     bool esp_animal;
     bool esp_undead;
     bool esp_demon;
@@ -1864,6 +1882,7 @@ struct dungeon_info_type {
     int final_ego;       /* Ego type for final_object, or effect type for devices */
     int final_artifact;    /* The artifact you'll find at the bottom */
     int final_guardian;    /* The artifact's guardian. If an artifact is specified, then it's NEEDED */
+    int initial_guardian;  /* Guarding the entrance */
 
     byte special_div;    /* % of monsters affected by the flags/races allowed, to add some variety */
     int tunnel_percent;
@@ -2031,7 +2050,7 @@ typedef void(*gain_level_fn)(int new_level);
 typedef void(*change_level_fn)(int old_level, int new_level);
 typedef void(*character_dump_fn)(doc_ptr doc);
 typedef void(*player_action_fn)(int energy_use);
-typedef void(*flags_fn)(u32b flgs[TR_FLAG_SIZE]);
+typedef void(*flags_fn)(u32b flgs[OF_ARRAY_SIZE]);
 typedef void(*stats_fn)(s16b stats[MAX_STATS]);
 typedef void(*load_fn)(savefile_ptr file);
 typedef void(*save_fn)(savefile_ptr file);
@@ -2066,6 +2085,7 @@ typedef struct {
     flags_fn                get_flags;
     load_fn                 load_player;
     save_fn                 save_player;
+    object_p                destroy_object;
 } class_t;
 
 struct equip_template_s;
@@ -2104,6 +2124,7 @@ typedef struct {
     process_world_fn        process_world;  /* Called every 10 game turns */
     load_fn                 load_player;
     save_fn                 save_player;
+    object_p                destroy_object;
     s16b                    pseudo_class_idx; /* For the "Monster" class ... */
     s16b                    shop_adjust;
 } race_t;
